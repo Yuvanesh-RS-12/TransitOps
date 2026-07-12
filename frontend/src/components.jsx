@@ -165,11 +165,11 @@ export function Table({ columns, data, actions, searchable = false, searchKeys, 
           <thead className="bg-gray-50/80 border-b border-gray-200">
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className={`text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide ${col.numeric ? 'text-right' : ''}`}>
+                <th key={col.key} className={`text-left px-4 py-3 font-semibold text-gray-700 font-semiboldg-wide ${col.numeric ? 'text-right' : ''}`}>
                   {col.label}
                 </th>
               ))}
-              {actions && <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Actions</th>}
+              {actions && <th className="text-left px-4 py-3 font-semibold text-gray-700 font-semiboldng-wide">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -404,4 +404,14 @@ export function AppShell({ user, onLogout, children }) {
       </div>
     </div>
   );
+}
+export function formatNumber(value, decimals = 0) {
+  const num = Number(value);
+
+  if (Number.isNaN(num)) return "-";
+
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }

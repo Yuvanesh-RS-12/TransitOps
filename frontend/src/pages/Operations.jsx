@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Wrench, AlertTriangle } from 'lucide-react';
-import { Tabs, Table, Modal, FormInput, Button, StatusBadge, useToast } from '../components.jsx';
+import { Tabs, Table, Modal, FormInput, Button, StatusBadge, useToast, formatNumber } from '../components.jsx';
 import {
   getMaintenance, createMaintenance, closeMaintenance,
   getFuelLogs, createFuelLog,
@@ -208,22 +208,22 @@ export default function Operations() {
   const maintenanceColumns = [
     { key: 'vehicleReg', label: 'Vehicle' },
     { key: 'description', label: 'Description' },
-    { key: 'cost', label: 'Cost (₹)' },
+    { key: 'cost', label: 'Cost (₹)', render: (r) => formatNumber(r.cost, 2) },
     { key: 'createdAt', label: 'Created', render: (r) => new Date(r.createdAt).toLocaleDateString() },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.isActive ? 'IN_SHOP' : 'AVAILABLE'} /> },
   ];
 
   const fuelColumns = [
     { key: 'vehicleReg', label: 'Vehicle' },
-    { key: 'liters', label: 'Liters' },
-    { key: 'cost', label: 'Cost (₹)' },
+    { key: 'liters', label: 'Liters', render: (r) => formatNumber(r.liters, 2) },
+    { key: 'cost', label: 'Cost (₹)', render: (r) => formatNumber(r.cost, 2) },
     { key: 'date', label: 'Date', render: (r) => new Date(r.date).toLocaleDateString() },
   ];
 
   const expenseColumns = [
     { key: 'vehicleReg', label: 'Vehicle' },
     { key: 'type', label: 'Type' },
-    { key: 'amount', label: 'Amount (₹)' },
+    { key: 'amount', label: 'Amount (₹)', render: (r) => formatNumber(r.amount, 2) },
     { key: 'date', label: 'Date', render: (r) => new Date(r.date).toLocaleDateString() },
   ];
 

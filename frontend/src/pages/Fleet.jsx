@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Pencil, Trash2, Wrench, ShieldCheck, AlertTriangle, CalendarClock } from 'lucide-react';
-import { Tabs, Table, Modal, FormInput, Button, StatusBadge, ConfirmModal, useToast } from '../components.jsx';
+import { Tabs, Table, Modal, FormInput, Button, StatusBadge, ConfirmModal, useToast, formatNumber } from '../components.jsx';
 import {
   getVehicles, createVehicle, updateVehicle, deleteVehicle,
   getDrivers, createDriver, updateDriver, deleteDriver,
@@ -204,8 +204,8 @@ export default function Fleet() {
     { key: 'registrationNo', label: 'Registration No' },
     { key: 'name', label: 'Name' },
     { key: 'type', label: 'Type' },
-    { key: 'maxLoadCapacity', label: 'Max Load (kg)', numeric: true },
-    { key: 'odometer', label: 'Odometer', numeric: true },
+    { key: 'maxLoadCapacity', label: 'Max Load (kg)', numeric: true, render: (r) => formatNumber(r.maxLoadCapacity) },
+    { key: 'odometer', label: 'Odometer', numeric: true, render: (r) => formatNumber(r.odometer) },
     { key: 'region', label: 'Region' },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
@@ -214,8 +214,8 @@ export default function Fleet() {
         const health = computeVehicleHealth(r, maintenanceRecords);
         return (
           <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${health.toneClass}`}>
-              {health.tier} · {health.score}
+            <span className={`inline-flex items-center whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium ring-1 ${health.toneClass}`}>
+              {health.tier} - {health.score}
             </span>
             {health.maintenanceDue && (
               <span title="Maintenance due soon" className="text-amber-500">
@@ -249,7 +249,7 @@ export default function Fleet() {
       },
     },
     { key: 'contactNumber', label: 'Contact' },
-    { key: 'safetyScore', label: 'Safety Score', numeric: true },
+    { key: 'safetyScore', label: 'Safety Score', numeric: true, render: (r) => formatNumber(r.safetyScore) },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
   ];
 

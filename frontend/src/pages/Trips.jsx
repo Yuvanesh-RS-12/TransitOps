@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
-import { Table, Modal, FormInput, Button, StatusBadge, ConfirmModal, useToast } from '../components.jsx';
+import { Table, Modal, FormInput, Button, StatusBadge, ConfirmModal, useToast, formatNumber } from '../components.jsx';
 import {
   getTrips, createTrip, dispatchTrip, completeTrip, cancelTrip,
   getVehicles, getDrivers,
@@ -147,7 +147,7 @@ export default function Trips() {
   };
 
   const vehicleOptions = availableVehicles.map((v) => ({
-    value: String(v.id), label: `${v.registrationNo} — ${v.name} (max ${v.maxLoadCapacity}kg)`,
+    value: String(v.id), label: `${v.registrationNo} — ${v.name} (max ${formatNumber(v.maxLoadCapacity)}kg)`,
   }));
   const driverOptions = availableDrivers.map((d) => ({
     value: String(d.id), label: `${d.name} — ${d.licenseNumber}`,
@@ -158,9 +158,9 @@ export default function Trips() {
     { key: 'destination', label: 'Destination' },
     { key: 'vehicleReg', label: 'Vehicle' },
     { key: 'driverName', label: 'Driver' },
-    { key: 'cargoWeight', label: 'Cargo (kg)' },
-    { key: 'plannedDistance', label: 'Distance (km)' },
-    { key: 'revenue', label: 'Revenue' },
+    { key: 'cargoWeight', label: 'Cargo (kg)', render: (r) => formatNumber(r.cargoWeight) },
+    { key: 'plannedDistance', label: 'Distance (km)', render: (r) => formatNumber(r.plannedDistance) },
+    { key: 'revenue', label: 'Revenue', render: (r) => `₹${formatNumber(r.revenue, 2)}` },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
   ];
 
