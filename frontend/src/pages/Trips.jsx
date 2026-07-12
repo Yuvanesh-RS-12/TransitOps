@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
-import { Table, Modal, FormInput, Button, StatusBadge } from '../components.jsx';
+import { Table, Modal, FormInput, Button, StatusBadge, ConfirmModal, useToast } from '../components.jsx';
 import {
   getTrips, createTrip, dispatchTrip, completeTrip, cancelTrip,
   getVehicles, getDrivers,
@@ -14,21 +14,32 @@ const emptyTripForm = {
 const emptyCompleteForm = { finalOdometer: '', fuelConsumed: '' };
 
 export default function Trips() {
+  const { showToast } = useToast();
+
   const [trips, setTrips] = useState([]);
+  const [tripsLoading, setTripsLoading] = useState(true);
   const [availableVehicles, setAvailableVehicles] = useState([]);
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [error, setError] = useState('');
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [tripForm, setTripForm] = useState(emptyTripForm);
+  const [savingTrip, setSavingTrip] = useState(false);
 
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completeForm, setCompleteForm] = useState(emptyCompleteForm);
   const [completingTripId, setCompletingTripId] = useState(null);
+  const [savingComplete, setSavingComplete] = useState(false);
+
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [dispatchingId, setDispatchingId] = useState(null);
 
   const [actionError, setActionError] = useState({});
 
-  const loadTrips = () => getTrips().then(setTrips);
+  const loadTrips = () => {
+    setTripsLoading(true);
+    return getTrips().then(setTrips).finally(() => setTripsLoading(false));
+  };
 
   useEffect(() => {
     loadTrips();
@@ -49,6 +60,7 @@ export default function Trips() {
   const submitTrip = async (e) => {
     e.preventDefault();
     setError('');
+    setSavingTrip(true);
     try {
       await createTrip({
         ...tripForm,
@@ -59,9 +71,12 @@ export default function Trips() {
         revenue: tripForm.revenue ? Number(tripForm.revenue) : 0,
       });
       setCreateModalOpen(false);
+      showToast('success', 'Trip created successfully');
       loadTrips();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create trip');
+    } finally {
+      setSavingTrip(false);
     }
   };
 
@@ -75,22 +90,31 @@ export default function Trips() {
 
   const handleDispatch = async (tripId) => {
     clearActionError(tripId);
+    setDispatchingId(tripId);
     try {
       await dispatchTrip(tripId);
+      showToast('success', 'Trip dispatched');
       loadTrips();
     } catch (err) {
-      setActionError((prev) => ({ ...prev, [tripId]: err.response?.data?.error || 'Failed to dispatch trip' }));
+      const message = err.response?.data?.error || 'Failed to dispatch trip';
+      setActionError((prev) => ({ ...prev, [tripId]: message }));
+      showToast('error', message);
+    } finally {
+      setDispatchingId(null);
     }
   };
 
-  const handleCancel = async (tripId) => {
-    if (!window.confirm('Cancel this dispatched trip? Vehicle and driver will be restored to Available.')) return;
+  const confirmCancelTrip = async () => {
+    const tripId = cancelTarget.id;
     clearActionError(tripId);
     try {
       await cancelTrip(tripId);
+      showToast('success', 'Trip cancelled — vehicle and driver restored to Available');
       loadTrips();
     } catch (err) {
-      setActionError((prev) => ({ ...prev, [tripId]: err.response?.data?.error || 'Failed to cancel trip' }));
+      const message = err.response?.data?.error || 'Failed to cancel trip';
+      setActionError((prev) => ({ ...prev, [tripId]: message }));
+      showToast('error', message);
     }
   };
 
@@ -103,16 +127,22 @@ export default function Trips() {
 
   const submitComplete = async (e) => {
     e.preventDefault();
+    setSavingComplete(true);
     try {
       await completeTrip(completingTripId, {
         finalOdometer: Number(completeForm.finalOdometer),
         fuelConsumed: Number(completeForm.fuelConsumed),
       });
       setCompleteModalOpen(false);
+      showToast('success', 'Trip completed successfully');
       loadTrips();
     } catch (err) {
-      setActionError((prev) => ({ ...prev, [completingTripId]: err.response?.data?.error || 'Failed to complete trip' }));
+      const message = err.response?.data?.error || 'Failed to complete trip';
+      setActionError((prev) => ({ ...prev, [completingTripId]: message }));
+      showToast('error', message);
       setCompleteModalOpen(false);
+    } finally {
+      setSavingComplete(false);
     }
   };
 
@@ -146,16 +176,23 @@ export default function Trips() {
       <Table
         columns={columns}
         data={trips}
+        loading={tripsLoading}
+        searchable
+        searchKeys={['source', 'destination', 'vehicleReg', 'driverName', 'status']}
+        emptyTitle="No trips found"
+        emptyMessage="Create a trip to get started."
         actions={(t) => (
           <div className="flex flex-col gap-1.5 items-start min-w-[140px]">
             <div className="flex gap-2">
               {t.status === 'DRAFT' && (
-                <Button variant="primary" onClick={() => handleDispatch(t.id)}>Dispatch</Button>
+                <Button variant="primary" onClick={() => handleDispatch(t.id)} loading={dispatchingId === t.id}>
+                  Dispatch
+                </Button>
               )}
               {t.status === 'DISPATCHED' && (
                 <>
                   <Button variant="success" onClick={() => openCompleteModal(t.id)}>Complete</Button>
-                  <Button variant="danger" onClick={() => handleCancel(t.id)}>Cancel</Button>
+                  <Button variant="danger" onClick={() => setCancelTarget(t)}>Cancel</Button>
                 </>
               )}
               {(t.status === 'COMPLETED' || t.status === 'CANCELLED') && (
@@ -194,7 +231,7 @@ export default function Trips() {
             onChange={(e) => setTripForm({ ...tripForm, revenue: e.target.value })} />
 
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-          <Button type="submit" className="w-full mt-2">Create Trip</Button>
+          <Button type="submit" loading={savingTrip} className="w-full mt-2 justify-center">Create Trip</Button>
         </form>
       </Modal>
 
@@ -205,9 +242,19 @@ export default function Trips() {
             onChange={(e) => setCompleteForm({ ...completeForm, finalOdometer: e.target.value })} />
           <FormInput label="Fuel Consumed (L)" type="number" step="0.01" value={completeForm.fuelConsumed} required
             onChange={(e) => setCompleteForm({ ...completeForm, fuelConsumed: e.target.value })} />
-          <Button type="submit" className="w-full mt-2">Complete Trip</Button>
+          <Button type="submit" loading={savingComplete} className="w-full mt-2 justify-center">Complete Trip</Button>
         </form>
       </Modal>
+
+      {/* CANCEL TRIP CONFIRM MODAL */}
+      <ConfirmModal
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={confirmCancelTrip}
+        title="Cancel this trip?"
+        message={cancelTarget ? `${cancelTarget.source} → ${cancelTarget.destination} will be cancelled. Vehicle and driver will be restored to Available.` : ''}
+        confirmLabel="Cancel Trip"
+      />
     </div>
   );
 }

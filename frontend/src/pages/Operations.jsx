@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
-import { Tabs, Table, Modal, FormInput, Button, StatusBadge } from '../components.jsx';
+import { Plus, Wrench, AlertTriangle } from 'lucide-react';
+import { Tabs, Table, Modal, FormInput, Button, StatusBadge, useToast } from '../components.jsx';
 import {
   getMaintenance, createMaintenance, closeMaintenance,
   getFuelLogs, createFuelLog,
@@ -12,31 +12,73 @@ const emptyMaintenanceForm = { vehicleId: '', description: '', cost: '' };
 const emptyFuelForm = { vehicleId: '', liters: '', cost: '', date: '' };
 const emptyExpenseForm = { vehicleId: '', type: '', amount: '', date: '' };
 
+const MAINTENANCE_ODOMETER_THRESHOLD = 40000;
+const MAINTENANCE_STALE_DAYS = 180;
+
+// Same heuristic used in Fleet.jsx's Predictive Maintenance flag — kept consistent across modules.
+function isMaintenanceDue(vehicle, maintenanceRecords) {
+  const vehicleRecords = maintenanceRecords.filter((m) => m.vehicleId === vehicle.id);
+  const lastRecord = vehicleRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const daysSinceLastService = lastRecord
+    ? (Date.now() - new Date(lastRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+    : Infinity;
+  return (
+    vehicle.status !== 'RETIRED' &&
+    Number(vehicle.odometer) >= MAINTENANCE_ODOMETER_THRESHOLD &&
+    daysSinceLastService > MAINTENANCE_STALE_DAYS
+  );
+}
+
 export default function Operations() {
+  const { showToast } = useToast();
   const [tab, setTab] = useState('Maintenance');
   const [error, setError] = useState('');
 
   // ===== MAINTENANCE STATE =====
   const [maintenanceRecords, setMaintenanceRecords] = useState([]);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(true);
   const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
   const [maintenanceForm, setMaintenanceForm] = useState(emptyMaintenanceForm);
   const [maintenanceVehicles, setMaintenanceVehicles] = useState([]);
+  const [savingMaintenance, setSavingMaintenance] = useState(false);
+  const [closingId, setClosingId] = useState(null);
   const [actionError, setActionError] = useState({});
+
+  // Vehicles with odometer/status data, used to compute maintenance-due flags on the Maintenance tab
+  const [dueCheckVehicles, setDueCheckVehicles] = useState([]);
 
   // ===== FUEL STATE =====
   const [fuelLogs, setFuelLogs] = useState([]);
+  const [fuelLoading, setFuelLoading] = useState(true);
   const [fuelModalOpen, setFuelModalOpen] = useState(false);
   const [fuelForm, setFuelForm] = useState(emptyFuelForm);
+  const [savingFuel, setSavingFuel] = useState(false);
   const [allVehicles, setAllVehicles] = useState([]);
 
   // ===== EXPENSE STATE =====
   const [expenses, setExpenses] = useState([]);
+  const [expensesLoading, setExpensesLoading] = useState(true);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
+  const [savingExpense, setSavingExpense] = useState(false);
 
-  const loadMaintenance = () => getMaintenance().then(setMaintenanceRecords);
-  const loadFuelLogs = () => getFuelLogs().then(setFuelLogs);
-  const loadExpenses = () => getExpenses().then(setExpenses);
+  const loadMaintenance = () => {
+    setMaintenanceLoading(true);
+    return Promise.all([getMaintenance(), getVehicles()])
+      .then(([records, vehicles]) => {
+        setMaintenanceRecords(records);
+        setDueCheckVehicles(vehicles);
+      })
+      .finally(() => setMaintenanceLoading(false));
+  };
+  const loadFuelLogs = () => {
+    setFuelLoading(true);
+    return getFuelLogs().then(setFuelLogs).finally(() => setFuelLoading(false));
+  };
+  const loadExpenses = () => {
+    setExpensesLoading(true);
+    return getExpenses().then(setExpenses).finally(() => setExpensesLoading(false));
+  };
   const loadAllVehicles = () => getVehicles().then(setAllVehicles);
 
   useEffect(() => {
@@ -57,6 +99,7 @@ export default function Operations() {
   const submitMaintenance = async (e) => {
     e.preventDefault();
     setError('');
+    setSavingMaintenance(true);
     try {
       await createMaintenance({
         vehicleId: Number(maintenanceForm.vehicleId),
@@ -64,19 +107,28 @@ export default function Operations() {
         cost: Number(maintenanceForm.cost),
       });
       setMaintenanceModalOpen(false);
+      showToast('success', 'Maintenance record created — vehicle set to In Shop');
       loadMaintenance();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create maintenance record');
+    } finally {
+      setSavingMaintenance(false);
     }
   };
 
   const handleCloseMaintenance = async (id) => {
     setActionError((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    setClosingId(id);
     try {
       await closeMaintenance(id);
+      showToast('success', 'Maintenance record closed — vehicle restored to Available');
       loadMaintenance();
     } catch (err) {
-      setActionError((prev) => ({ ...prev, [id]: err.response?.data?.error || 'Failed to close record' }));
+      const message = err.response?.data?.error || 'Failed to close record';
+      setActionError((prev) => ({ ...prev, [id]: message }));
+      showToast('error', message);
+    } finally {
+      setClosingId(null);
     }
   };
 
@@ -90,6 +142,7 @@ export default function Operations() {
   const submitFuel = async (e) => {
     e.preventDefault();
     setError('');
+    setSavingFuel(true);
     try {
       await createFuelLog({
         vehicleId: Number(fuelForm.vehicleId),
@@ -98,9 +151,12 @@ export default function Operations() {
         date: fuelForm.date || undefined,
       });
       setFuelModalOpen(false);
+      showToast('success', 'Fuel log added');
       loadFuelLogs();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add fuel log');
+    } finally {
+      setSavingFuel(false);
     }
   };
 
@@ -114,6 +170,7 @@ export default function Operations() {
   const submitExpense = async (e) => {
     e.preventDefault();
     setError('');
+    setSavingExpense(true);
     try {
       await createExpense({
         vehicleId: Number(expenseForm.vehicleId),
@@ -122,9 +179,12 @@ export default function Operations() {
         date: expenseForm.date || undefined,
       });
       setExpenseModalOpen(false);
+      showToast('success', 'Expense added');
       loadExpenses();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add expense');
+    } finally {
+      setSavingExpense(false);
     }
   };
 
@@ -135,6 +195,14 @@ export default function Operations() {
   const allVehicleOptions = allVehicles.map((v) => ({
     value: String(v.id), label: `${v.registrationNo} — ${v.name}`,
   }));
+
+  // ===== MAINTENANCE-DUE VEHICLES (no open record, flagged by odometer + staleness heuristic) =====
+  const vehiclesWithOpenRecord = new Set(
+    maintenanceRecords.filter((m) => m.isActive).map((m) => m.vehicleId)
+  );
+  const dueVehicles = dueCheckVehicles.filter(
+    (v) => !vehiclesWithOpenRecord.has(v.id) && isMaintenanceDue(v, maintenanceRecords)
+  );
 
   // ===== COLUMNS =====
   const maintenanceColumns = [
@@ -183,25 +251,68 @@ export default function Operations() {
       <Tabs tabs={['Maintenance', 'Fuel', 'Expenses']} active={tab} onChange={setTab} />
 
       {tab === 'Maintenance' && (
-        <Table
-          columns={maintenanceColumns}
-          data={maintenanceRecords}
-          actions={(m) => (
-            <div className="flex flex-col gap-1 items-start">
-              {m.isActive ? (
-                <Button variant="success" onClick={() => handleCloseMaintenance(m.id)}>Close</Button>
-              ) : (
-                <span className="text-xs text-gray-400">Closed</span>
-              )}
-              {actionError[m.id] && <p className="text-red-600 text-xs">{actionError[m.id]}</p>}
+        <div>
+          {!maintenanceLoading && dueVehicles.length > 0 && (
+            <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  {dueVehicles.length} vehicle{dueVehicles.length > 1 ? 's are' : ' is'} due for maintenance
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {dueVehicles.map((v) => v.registrationNo).join(', ')} — high odometer reading with no service logged in over {MAINTENANCE_STALE_DAYS} days.
+                </p>
+              </div>
             </div>
           )}
+
+          <Table
+            columns={maintenanceColumns}
+            data={maintenanceRecords}
+            loading={maintenanceLoading}
+            searchable
+            searchKeys={['vehicleReg', 'description']}
+            emptyTitle="No maintenance records found"
+            emptyMessage="Create a record to get started."
+            actions={(m) => (
+              <div className="flex flex-col gap-1 items-start">
+                {m.isActive ? (
+                  <Button variant="success" onClick={() => handleCloseMaintenance(m.id)} loading={closingId === m.id}>
+                    Close
+                  </Button>
+                ) : (
+                  <span className="text-xs text-gray-400">Closed</span>
+                )}
+                {actionError[m.id] && <p className="text-red-600 text-xs">{actionError[m.id]}</p>}
+              </div>
+            )}
+          />
+        </div>
+      )}
+
+      {tab === 'Fuel' && (
+        <Table
+          columns={fuelColumns}
+          data={fuelLogs}
+          loading={fuelLoading}
+          searchable
+          searchKeys={['vehicleReg']}
+          emptyTitle="No fuel logs found"
+          emptyMessage="Add a fuel log to get started."
         />
       )}
 
-      {tab === 'Fuel' && <Table columns={fuelColumns} data={fuelLogs} />}
-
-      {tab === 'Expenses' && <Table columns={expenseColumns} data={expenses} />}
+      {tab === 'Expenses' && (
+        <Table
+          columns={expenseColumns}
+          data={expenses}
+          loading={expensesLoading}
+          searchable
+          searchKeys={['vehicleReg', 'type']}
+          emptyTitle="No expenses found"
+          emptyMessage="Add an expense to get started."
+        />
+      )}
 
       {/* MAINTENANCE MODAL */}
       <Modal open={maintenanceModalOpen} onClose={() => setMaintenanceModalOpen(false)} title="New Maintenance Record">
@@ -217,7 +328,7 @@ export default function Operations() {
             onChange={(e) => setMaintenanceForm({ ...maintenanceForm, cost: e.target.value })} />
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
           <p className="text-xs text-gray-400 mb-3">Creating this record will set the vehicle status to "In Shop".</p>
-          <Button type="submit" className="w-full mt-2">Create Record</Button>
+          <Button type="submit" loading={savingMaintenance} className="w-full mt-2 justify-center">Create Record</Button>
         </form>
       </Modal>
 
@@ -233,7 +344,7 @@ export default function Operations() {
           <FormInput label="Date" type="date" value={fuelForm.date}
             onChange={(e) => setFuelForm({ ...fuelForm, date: e.target.value })} />
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-          <Button type="submit" className="w-full mt-2">Add Fuel Log</Button>
+          <Button type="submit" loading={savingFuel} className="w-full mt-2 justify-center">Add Fuel Log</Button>
         </form>
       </Modal>
 
@@ -249,7 +360,7 @@ export default function Operations() {
           <FormInput label="Date" type="date" value={expenseForm.date}
             onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} />
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-          <Button type="submit" className="w-full mt-2">Add Expense</Button>
+          <Button type="submit" loading={savingExpense} className="w-full mt-2 justify-center">Add Expense</Button>
         </form>
       </Modal>
     </div>
