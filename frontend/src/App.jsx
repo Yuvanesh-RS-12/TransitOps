@@ -1,7 +1,7 @@
 // TransitOps App shell — routing + auth state (localStorage-backed, no context needed at this scale)
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AppShell } from './components.jsx';
+import { AppShell, ToastProvider } from './components.jsx';
 import Login from './pages/Login.jsx';
 import Analytics from './pages/Analytics.jsx';
 import Fleet from './pages/Fleet.jsx';
@@ -34,23 +34,27 @@ export default function App() {
 
   if (!user) {
     return (
-      <Routes>
-        <Route path="/login" element={<Login onLogin={handleLogin} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/login" element={<Login onLogin={handleLogin} />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </ToastProvider>
     );
   }
 
   return (
-    <AppShell user={user} onLogout={handleLogout}>
-      <Routes>
-        <Route path="/" element={<Analytics />} />
-        <Route path="/fleet" element={<Fleet />} />
-        <Route path="/trips" element={<Trips />} />
-        <Route path="/operations" element={<Operations />} />
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppShell>
+    <ToastProvider>
+      <AppShell user={user} onLogout={handleLogout}>
+        <Routes>
+          <Route path="/" element={<Analytics />} />
+          <Route path="/fleet" element={<Fleet />} />
+          <Route path="/trips" element={<Trips />} />
+          <Route path="/operations" element={<Operations />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AppShell>
+    </ToastProvider>
   );
 }
